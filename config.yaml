@@ -1,0 +1,33 @@
+# M&A Oracle Data Pipeline Configuration
+
+embedding:
+  provider: "bedrock"          # Options: bedrock, huggingface, openai
+  bedrock:
+    model_id: "amazon.titan-embed-text-v1"
+    region: "us-east-1"
+  huggingface:
+    model_name: "all-MiniLM-L6-v2"
+    device: "cpu"
+
+companies:
+  - "AAPL"
+  - "MSFT"
+  - "NVDA"
+  - "AMZN"
+  - "META"
+  - "GOOGL"
+  - "TSLA"
+  - "CRM"
+  - "SNOW"
+  - "CRWD"
+  - "PANW"
+  - "FTNT"
+
+edgar:
+  filing_types: ["10-K"]
+  filings_per_type: 2
+  output_dir: "output/edgar"
+
+output:
+  base_dir: "output"
+  vector_store: "output/vector_store"
