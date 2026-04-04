@@ -1,13 +1,59 @@
 # M&A Oracle Data Pipeline Configuration
 
 embedding:
-  provider: "bedrock"          # Options: bedrock, huggingface, openai
+  provider: "huggingface"   # bedrock | huggingface | ollama | openai | cohere | voyage | jina
+
+  # 🔴 AWS Bedrock (Paid)
   bedrock:
     model_id: "amazon.titan-embed-text-v1"
     region: "us-east-1"
+
+  # 🟢 Hugging Face (Free - Default)
   huggingface:
     model_name: "all-MiniLM-L6-v2"
     device: "cpu"
+    batch_size: 32
+
+  # 🟢 Ollama (Free - Local)
+  ollama:
+    model: "nomic-embed-text"
+    base_url: "http://localhost:11434"
+    timeout: 30
+
+  # 🟡 OpenAI (Low Cost)
+  openai:
+    model: "text-embedding-3-small"
+    api_key: "${OPENAI_API_KEY}"
+    batch_size: 100
+
+  # 🟡 Cohere (Free Tier)
+  cohere:
+    model: "embed-english-v3.0"
+    api_key: "${COHERE_API_KEY}"
+
+  # 🟡 Voyage AI (Very Good Quality)
+  voyage:
+    model: "voyage-lite-02"
+    api_key: "${VOYAGE_API_KEY}"
+
+  # 🟡 Jina AI (Free tier available)
+  jina:
+    model: "jina-embeddings-v2-base-en"
+    api_key: "${JINA_API_KEY}"
+
+  # ⚙️ Common Settings
+  settings:
+    normalize: true
+    max_tokens: 512
+    cache_embeddings: true
+
+  # 🔄 Fallback Strategy
+  fallback:
+    enabled: true
+    order:
+      - huggingface
+      - ollama
+      - openai
 
 companies:
   - "AAPL"
