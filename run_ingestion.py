@@ -30,7 +30,7 @@ SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "")
 
 
 def load_config():
-    with open(os.path.join(os.path.dirname(__file__), "config.yaml")) as f:
+    with open(os.path.join(os.path.dirname(__file__), "config.yaml"), encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
