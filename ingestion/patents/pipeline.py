@@ -22,9 +22,10 @@ TICKER_TO_ASSIGNEE = {
 
 
 class PatentPipeline:
-    def __init__(self, db_path: str = "data/patents/patents.db"):
+    def __init__(self, db_path: str = "data/patents/patents.db", raw_dir: str = "output/patents/raw"):
         self.client = PatentClient()
         self.db_path = db_path
+        self.raw_dir = raw_dir
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.conn = sqlite3.connect(db_path)
         self._create_tables()
@@ -42,8 +43,16 @@ class PatentPipeline:
         self.conn.commit()
 
     def ingest_company(self, ticker: str, count: int = 50, after_date: str = "2020-01-01") -> List[Dict]:
+        import json
         assignee = TICKER_TO_ASSIGNEE.get(ticker, ticker)
         patents = self.client.search_by_assignee(assignee, size=count)
+
+        # Save raw patent data
+        raw_path = os.path.join(self.raw_dir, ticker)
+        os.makedirs(raw_path, exist_ok=True)
+        with open(os.path.join(raw_path, "patents_raw.json"), "w", encoding="utf-8") as f:
+            json.dump(patents, f, indent=2)
+        logger.info(f"  Saved raw patent data to {raw_path}/patents_raw.json")
 
         chunks = []
         for p in patents:

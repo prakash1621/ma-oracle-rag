@@ -23,15 +23,17 @@ class ProxyPipeline:
         chunks = pipeline.ingest_company("AAPL", count=2)
     """
 
-    def __init__(self, user_agent: str):
+    def __init__(self, user_agent: str, raw_dir: str = "output/proxy/raw"):
         self.client = EdgarClient(user_agent=user_agent)
         self.parser = ProxyParser()
+        self.raw_dir = raw_dir
         self._all_chunks: List[Dict] = []
 
     def ingest_company(
         self, ticker: str, count: int = 2, cik: Optional[str] = None
     ) -> List[Dict]:
         """Ingest proxy statements for a company."""
+        import os, json
         if not cik:
             cik = self.client.get_cik(ticker)
 
@@ -42,6 +44,15 @@ class ProxyPipeline:
         for filing in filings:
             try:
                 html = self.client.download_filing(filing)
+
+                # Save raw HTML
+                raw_path = os.path.join(self.raw_dir, ticker)
+                os.makedirs(raw_path, exist_ok=True)
+                filename = f"DEF14A_{filing.filing_date}_{filing.accession_number}.html"
+                with open(os.path.join(raw_path, filename), "w", encoding="utf-8") as f:
+                    f.write(html)
+                logger.info(f"  Saved raw proxy to {raw_path}/{filename}")
+
                 metadata = {
                     "company_name": filing.company_name,
                     "cik": filing.cik,

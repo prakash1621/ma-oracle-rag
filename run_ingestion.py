@@ -118,7 +118,7 @@ def ingest_company_facts(tickers, config):
 
 
 def build_index(config):
-    """Merge all chunks and build FAISS vector store."""
+    """Merge all chunks and upsert to Pinecone using integrated embedding."""
     base_dir = config.get("output", {}).get("base_dir", "output")
     chunk_files = [
         (os.path.join(base_dir, "edgar", "chunked_documents.json"), "EDGAR"),
@@ -142,25 +142,91 @@ def build_index(config):
 
     print(f"\n  Total: {len(all_docs)} chunks to index")
 
-    from providers import get_embeddings
-    from langchain_community.vectorstores import FAISS
+    from pinecone import Pinecone
 
-    embeddings = get_embeddings()
-    texts = [d["text"] for d in all_docs]
-    metadatas = [d["metadata"] for d in all_docs]
+    vs_cfg = config.get("vector_store", {}).get("pinecone", {})
+    index_name = vs_cfg.get("index_name", "ma-oracle-cap")
+    namespace = vs_cfg.get("namespace", "default")
+    cloud = vs_cfg.get("cloud", "aws")
+    region = vs_cfg.get("region", "us-east-1")
+    embed_model = config.get("embedding", {}).get("pinecone", {}).get("model_name", "multilingual-e5-large")
 
-    batch_size = 50
-    vectorstore = FAISS.from_texts(texts[:batch_size], embeddings, metadatas=metadatas[:batch_size])
-    for i in range(batch_size, len(texts), batch_size):
-        end = min(i + batch_size, len(texts))
-        vectorstore.add_texts(texts[i:end], metadatas=metadatas[i:end])
-        if (i // batch_size) % 50 == 0:
-            print(f"  Indexed {end}/{len(texts)} docs...")
+    pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 
-    vs_path = config.get("output", {}).get("vector_store", "output/vector_store")
-    os.makedirs(vs_path, exist_ok=True)
-    vectorstore.save_local(vs_path)
-    print(f"\n  FAISS index saved: {vectorstore.index.ntotal} documents → {vs_path}/")
+    # Create index if it doesn't exist
+    existing = [idx.name for idx in pc.list_indexes()]
+    if index_name not in existing:
+        print(f"  Creating Pinecone index '{index_name}' with integrated embedding ({embed_model})...")
+        pc.create_index_for_model(
+            name=index_name,
+            cloud=cloud,
+            region=region,
+            embed={
+                "model": embed_model,
+                "field_map": {"text": "chunk_text"},
+            },
+        )
+        print(f"  Index '{index_name}' created.")
+    else:
+        print(f"  Index '{index_name}' already exists.")
+
+    index = pc.Index(index_name)
+    print(f"  Connected to Pinecone index: {index_name}")
+
+    # Pinecone integrated embedding: upsert_records with text, max 96 per batch
+    # Rate limit: 250k tokens/min on free plan, so we add delays and retry on 429
+    import time
+
+    batch_size = 48  # Smaller batches to avoid rate limits
+    start_from = 0
+
+    # Check if we can resume from a previous run
+    stats = index.describe_index_stats()
+    existing_count = stats.get("total_vector_count", 0)
+    if existing_count > 0:
+        print(f"  Index already has {existing_count} vectors. Resuming from doc-{existing_count}...")
+        start_from = existing_count
+
+    for i in range(start_from, len(all_docs), batch_size):
+        batch = all_docs[i:i + batch_size]
+        records = []
+        for j, doc in enumerate(batch):
+            record = {"_id": f"doc-{i + j}", "chunk_text": doc["text"]}
+            # Add metadata fields (Pinecone stores them for filtering)
+            for k, v in doc.get("metadata", {}).items():
+                if isinstance(v, (str, int, float, bool)):
+                    record[k] = v
+                elif isinstance(v, list):
+                    record[k] = ", ".join(str(x) for x in v)
+                else:
+                    record[k] = str(v)
+            records.append(record)
+
+        # Retry with exponential backoff on rate limit (429)
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                index.upsert_records(namespace, records)
+                break
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 30 * (attempt + 1)  # 30s, 60s, 90s, 120s, 150s
+                    print(f"  Rate limited at doc-{i}. Waiting {wait}s (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(wait)
+                else:
+                    raise
+
+        end = min(i + batch_size, len(all_docs))
+        if (i // batch_size) % 5 == 0:
+            print(f"  Upserted {end}/{len(all_docs)} docs...")
+
+        # Throttle: pause between batches to stay under token limit
+        time.sleep(2)
+
+    time.sleep(5)  # Wait for indexing to complete
+    stats = index.describe_index_stats()
+    total = stats.get("total_vector_count", 0)
+    print(f"\n  Pinecone index '{index_name}' updated: {total} total vectors")
 
 
 def show_stats(config):
