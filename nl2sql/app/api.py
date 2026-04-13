@@ -1,0 +1,104 @@
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from nl2sql.app.config import get_settings
+from nl2sql.app.database import DatabaseClient
+from nl2sql.app.llm import SQLGenerator
+from nl2sql.app.memory import count_memories, create_agent_memory
+from nl2sql.app.models import ChatRequest, ChatResponse, HealthResponse
+from nl2sql.app.pipeline import NL2SQLPipeline
+from nl2sql.app.schema import load_database_schema
+from nl2sql.app.security import SQLValidator
+from nl2sql.app.seed_memory import seed_agent_memory
+
+from src.contracts import QueryRequest, QueryResponse as RAGQueryResponse
+from src.pipeline import RAGPipeline
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    database = DatabaseClient(settings.db_path)
+    schema = load_database_schema(settings.db_path)
+    agent_memory = create_agent_memory(settings)
+    await seed_agent_memory(agent_memory)
+
+    app.state.settings = settings
+    app.state.database = database
+    app.state.agent_memory = agent_memory
+    app.state.pipeline = NL2SQLPipeline(
+        settings=settings,
+        database=database,
+        sql_generator=SQLGenerator(settings=settings, schema=schema),
+        sql_validator=SQLValidator(schema=schema, database=database),
+        agent_memory=agent_memory,
+    )
+    app.state.rag_pipeline = RAGPipeline(use_mocks=_should_use_mocks())
+    yield
+
+
+def _should_use_mocks() -> bool:
+    """Auto-detect: use real modules if Person 2/3/4 code exists, otherwise mocks."""
+    try:
+        import src.retrieval.pinecone_retriever  # noqa: F401
+        import src.knowledge_graph.query  # noqa: F401
+        import src.contradiction.detector  # noqa: F401
+        return False  # All real modules found — use them
+    except ImportError:
+        return True  # Some modules missing — use mocks
+
+
+app = FastAPI(title="NL2SQL API", lifespan=lifespan)
+
+# Mount static asset directory for CSS and JS
+app.mount("/static", StaticFiles(directory="nl2sql/static"), name="static")
+
+
+@app.get("/")
+async def serve_ui():
+    """Serve the Glassmorphism Front End"""
+    return FileResponse("nl2sql/static/index.html")
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health(request: Request) -> HealthResponse:
+    database_status = "connected" if request.app.state.database.check_connection() else "disconnected"
+    return HealthResponse(
+        status="ok",
+        database=database_status,
+        agent_memory_items=count_memories(request.app.state.agent_memory),
+    )
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+    return await request.app.state.pipeline.run(payload.question)
+
+
+@app.post("/query")
+async def rag_query(payload: QueryRequest, request: Request):
+    """Unified endpoint — routes question to the best data source automatically."""
+    result = request.app.state.rag_pipeline.query(
+        payload.question, payload.filters
+    )
+    response = {
+        "answer": result.answer,
+        "citations": [
+            {
+                "company_name": c.company_name,
+                "filing_type": c.filing_type,
+                "filing_date": c.filing_date,
+                "source_text": c.source_text,
+                "relevance_score": c.relevance_score,
+            }
+            for c in result.citations
+        ],
+        "route": result.route,
+        "confidence": result.confidence,
+    }
+    if result.extras:
+        response["extras"] = result.extras
+    return response
