@@ -1,60 +1,73 @@
 # M&A Oracle Data Pipeline Configuration
 
+# ─── Embedding Provider ─────────────────────────────────────
 embedding:
-  provider: "huggingface"   # bedrock | huggingface | ollama | openai | cohere | voyage | jina
+  provider: "pinecone"
 
-  # 🔴 AWS Bedrock (Paid)
+  huggingface:
+    model_name: "all-MiniLM-L6-v2"
+    device: "cpu"
+
   bedrock:
     model_id: "amazon.titan-embed-text-v1"
     region: "us-east-1"
 
-  # 🟢 Hugging Face (Free - Default)
-  huggingface:
-    model_name: "all-MiniLM-L6-v2"
-    device: "cpu"
-    batch_size: 32
-
-  # 🟢 Ollama (Free - Local)
-  ollama:
-    model: "nomic-embed-text"
-    base_url: "http://localhost:11434"
-    timeout: 30
-
-  # 🟡 OpenAI (Low Cost)
   openai:
-    model: "text-embedding-3-small"
-    api_key: "${OPENAI_API_KEY}"
-    batch_size: 100
+    model_name: "text-embedding-3-small"
 
-  # 🟡 Cohere (Free Tier)
-  cohere:
-    model: "embed-english-v3.0"
-    api_key: "${COHERE_API_KEY}"
+  pinecone:
+    model_name: "multilingual-e5-large"
 
-  # 🟡 Voyage AI (Very Good Quality)
-  voyage:
-    model: "voyage-lite-02"
-    api_key: "${VOYAGE_API_KEY}"
+# ─── LLM (Language Model) ──────────────────────────────────
+llm:
+  provider: "groq"
 
-  # 🟡 Jina AI (Free tier available)
-  jina:
-    model: "jina-embeddings-v2-base-en"
-    api_key: "${JINA_API_KEY}"
+  groq:
+    model_name: "llama-3.3-70b-versatile"
+    base_url: "https://api.groq.com/openai/v1"
+    temperature: 0
 
-  # ⚙️ Common Settings
-  settings:
-    normalize: true
-    max_tokens: 512
-    cache_embeddings: true
+  bedrock:
+    model_id: "anthropic.claude-3-haiku-20240307-v1:0"
+    region: "us-east-1"
+    temperature: 0
 
-  # 🔄 Fallback Strategy
-  fallback:
-    enabled: true
-    order:
-      - huggingface
-      - ollama
-      - openai
+  openai:
+    model_name: "gpt-4o-mini"
+    temperature: 0
 
+  ollama:
+    model_name: "llama3.1"
+    base_url: "http://localhost:11434"
+    temperature: 0
+
+# ─── Vector Store ───────────────────────────────────────────
+vector_store:
+  provider: "pinecone"
+
+  faiss:
+    path: "vector_store"
+
+  pinecone:
+    index_name: "ma-oracle-cap"
+    namespace: "default"
+    cloud: "aws"
+    region: "us-east-1"
+
+# ─── Chunking Strategies ───────────────────────────────────
+chunking:
+  parent_child:
+    parent_size: 3000
+    parent_overlap: 500
+    child_size: 500
+    child_overlap: 100
+
+  semantic:
+    buffer_size: 1
+    breakpoint_threshold_type: "percentile"
+    breakpoint_threshold_amount: 95
+
+# ─── Companies ──────────────────────────────────────────────
 companies:
   - "AAPL"
   - "MSFT"
@@ -69,11 +82,23 @@ companies:
   - "PANW"
   - "FTNT"
 
+# ─── EDGAR Settings ────────────────────────────────────────
 edgar:
   filing_types: ["10-K"]
   filings_per_type: 2
   output_dir: "output/edgar"
 
+# ─── Output ────────────────────────────────────────────────
 output:
   base_dir: "output"
   vector_store: "output/vector_store"
+
+# ─── NL2SQL Service ─────────────────────────────────────────
+nl2sql:
+  host: "0.0.0.0"
+  port: 8000
+  max_rows: 200
+  memory_search_limit: 4
+  memory_namespace: "nl2sql-memory"
+  llm_base_url: "https://api.groq.com/openai/v1"
+  llm_model: "llama-3.3-70b-versatile"

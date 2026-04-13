@@ -22,11 +22,21 @@ class TranscriptPipeline:
         chunks = pipeline.ingest_company("AAPL", count=4)
     """
 
-    def __init__(self, user_agent: str = ""):
+    def __init__(self, user_agent: str = "", raw_dir: str = "output/transcripts/raw"):
         self.scraper = TranscriptScraper()
         self.parser = TranscriptParser()
         self.user_agent = user_agent
+        self.raw_dir = raw_dir
         self._all_chunks: List[Dict] = []
+
+    def _save_raw(self, ticker: str, transcript: Dict, index: int):
+        """Save raw transcript data to disk."""
+        import os, json
+        raw_path = os.path.join(self.raw_dir, ticker)
+        os.makedirs(raw_path, exist_ok=True)
+        filename = f"transcript_{index}_{transcript.get('date', 'unknown').replace(' ', '_')}.json"
+        with open(os.path.join(raw_path, filename), "w", encoding="utf-8") as f:
+            json.dump(transcript, f, indent=2)
 
     def ingest_company(
         self, ticker: str, count: int = 4, cik: Optional[str] = None
@@ -36,12 +46,15 @@ class TranscriptPipeline:
         Tries Motley Fool first, falls back to 8-K earnings releases.
         """
         chunks = []
+        raw_idx = 0
 
         # Try Motley Fool
         urls = self.scraper.find_transcript_urls(ticker, count=count)
         for url in urls:
             transcript = self.scraper.fetch_transcript(url)
             if transcript:
+                self._save_raw(ticker, transcript, raw_idx)
+                raw_idx += 1
                 parsed = self.parser.parse(transcript)
                 chunks.extend(parsed)
                 logger.info(f"  Motley Fool: {len(parsed)} chunks from {url}")
@@ -56,6 +69,8 @@ class TranscriptPipeline:
 
             releases = self.scraper.fetch_from_8k(client, cik, count=count)
             for release in releases:
+                self._save_raw(ticker, release, raw_idx)
+                raw_idx += 1
                 parsed = self.parser.parse(release)
                 chunks.extend(parsed)
 
