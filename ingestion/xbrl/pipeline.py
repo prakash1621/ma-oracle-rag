@@ -5,6 +5,7 @@ Orchestrates: fetch company facts → parse → store in SQLite.
 Supports batch ingestion of multiple companies.
 """
 
+import json
 import logging
 from typing import List, Dict, Optional
 
@@ -33,10 +34,12 @@ class XBRLPipeline:
         user_agent: str,
         db_path: str = "data/xbrl/financials.db",
         core_only: bool = True,
+        raw_dir: str = "output/xbrl/raw",
     ):
         self.client = XBRLClient(user_agent=user_agent)
         self.parser = XBRLParser(core_only=core_only)
         self.storage = XBRLStorage(db_path=db_path)
+        self.raw_dir = raw_dir
         self._cik_cache: Dict[str, str] = {}
 
     def _resolve_cik(self, ticker: str, cik: Optional[str] = None) -> str:
@@ -75,6 +78,14 @@ class XBRLPipeline:
         except Exception as e:
             logger.error(f"Failed to fetch XBRL for {ticker}: {e}")
             return {"ticker": ticker, "cik": cik, "status": "error", "error": str(e)}
+
+        # Save raw XBRL JSON
+        import os
+        raw_path = os.path.join(self.raw_dir, ticker)
+        os.makedirs(raw_path, exist_ok=True)
+        with open(os.path.join(raw_path, "company_facts.json"), "w", encoding="utf-8") as f:
+            json.dump(raw_facts, f, indent=2)
+        logger.info(f"  Saved raw XBRL data to {raw_path}/company_facts.json")
 
         entity_name = raw_facts.get("entityName", ticker)
 

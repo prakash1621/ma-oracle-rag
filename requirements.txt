@@ -15,7 +15,8 @@ lxml>=5.0.0
 langchain-text-splitters>=0.0.1
 
 # Vector store
-faiss-cpu>=1.7.4
+pinecone-client>=3.0.0
+langchain-pinecone>=0.1.0
 
 # Default embedding provider: AWS Bedrock
 boto3>=1.34.0
@@ -25,3 +26,8 @@ langchain-core>=0.1.10
 
 # Optional: Free local embeddings (no API key needed)
 # pip install sentence-transformers langchain-huggingface
+
+# NL2SQL service
+fastapi>=0.100.0
+uvicorn>=0.23.0
+vanna[openai]>=0.7.0
