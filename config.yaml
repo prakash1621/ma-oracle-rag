@@ -84,8 +84,8 @@ companies:
 
 # ─── EDGAR Settings ────────────────────────────────────────
 edgar:
-  filing_types: ["10-K"]
-  filings_per_type: 2
+  filing_types: ["10-K", "10-Q", "8-K"]
+  filings_per_type: 5
   output_dir: "output/edgar"
 
 # ─── Output ────────────────────────────────────────────────

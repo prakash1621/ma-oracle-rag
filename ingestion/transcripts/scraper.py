@@ -159,7 +159,42 @@ class TranscriptScraper:
             # Item 2.02 = Results of Operations and Financial Condition
             if "2.02" in filing.items:
                 try:
-                    html = client.download_filing(filing)
+                    # Look for press release in the filing index by filename.
+                    # Companies name these differently:
+                    #   Apple:  a8-kex991q1...htm  (contains 'ex99')
+                    #   NVIDIA: q4fy26pr.htm        (ends with 'pr.htm')
+                    #   Others: pressrelease.htm, earnings-release.htm
+                    docs = client.get_filing_index(filing)
+                    ex99_url = None
+                    for doc in docs:
+                        name_lower = doc.get("name", "").lower()
+                        is_press_release = (
+                            "ex99" in name_lower           # AAPL: a8-kex991...htm, MSFT: msft-ex99_1.htm
+                            or "ex-99" in name_lower
+                            or name_lower.endswith("pr.htm")   # NVDA: q4fy26pr.htm
+                            or "pressrelease" in name_lower
+                            or "press-release" in name_lower
+                            or "earnings-release" in name_lower
+                            or "exhibit991" in name_lower   # META, GOOGL, TSLA, CRM
+                            or "exhibit99" in name_lower    # TSLA: exhibit9911111.htm
+                            or name_lower.endswith("earnings.htm")  # SNOW: fy2026q4earnings.htm
+                        )
+                        if is_press_release:
+                            ex99_url = doc.get("url")
+                            break
+                    
+                    if ex99_url:
+                        logger.info(f"Downloading EX-99 Press Release from {ex99_url}")
+                        import requests as _requests
+                        ex99_resp = _requests.get(
+                            ex99_url,
+                            headers={"User-Agent": client.session.headers.get("User-Agent", "MAOracle contact@example.com")},
+                            timeout=30,
+                        )
+                        html = ex99_resp.text if ex99_resp.status_code == 200 else client.download_filing(filing)
+                    else:
+                        html = client.download_filing(filing)
+
                     soup = BeautifulSoup(html, "lxml")
                     for tag in soup(["script", "style"]):
                         tag.decompose()
