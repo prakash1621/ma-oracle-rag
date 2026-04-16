@@ -1,0 +1,104 @@
+# M&A Oracle Data Pipeline Configuration
+
+# ─── Embedding Provider ─────────────────────────────────────
+embedding:
+  provider: "pinecone"
+
+  huggingface:
+    model_name: "all-MiniLM-L6-v2"
+    device: "cpu"
+
+  bedrock:
+    model_id: "amazon.titan-embed-text-v1"
+    region: "us-east-1"
+
+  openai:
+    model_name: "text-embedding-3-small"
+
+  pinecone:
+    model_name: "multilingual-e5-large"
+
+# ─── LLM (Language Model) ──────────────────────────────────
+llm:
+  provider: "groq"
+
+  groq:
+    model_name: "llama-3.3-70b-versatile"
+    base_url: "https://api.groq.com/openai/v1"
+    temperature: 0
+
+  bedrock:
+    model_id: "anthropic.claude-3-haiku-20240307-v1:0"
+    region: "us-east-1"
+    temperature: 0
+
+  openai:
+    model_name: "gpt-4o-mini"
+    temperature: 0
+
+  ollama:
+    model_name: "llama3.1"
+    base_url: "http://localhost:11434"
+    temperature: 0
+
+# ─── Vector Store ───────────────────────────────────────────
+vector_store:
+  provider: "pinecone"
+
+  faiss:
+    path: "vector_store"
+
+  pinecone:
+    index_name: "ma-oracle-cap"
+    namespace: "default"
+    cloud: "aws"
+    region: "us-east-1"
+
+# ─── Chunking Strategies ───────────────────────────────────
+chunking:
+  parent_child:
+    parent_size: 3000
+    parent_overlap: 500
+    child_size: 500
+    child_overlap: 100
+
+  semantic:
+    buffer_size: 1
+    breakpoint_threshold_type: "percentile"
+    breakpoint_threshold_amount: 95
+
+# ─── Companies ──────────────────────────────────────────────
+companies:
+  - "AAPL"
+  - "MSFT"
+  - "NVDA"
+  - "AMZN"
+  - "META"
+  - "GOOGL"
+  - "TSLA"
+  - "CRM"
+  - "SNOW"
+  - "CRWD"
+  - "PANW"
+  - "FTNT"
+
+# ─── EDGAR Settings ────────────────────────────────────────
+edgar:
+  filing_types: ["10-K", "10-Q", "8-K"]
+  filings_per_type: 5
+  output_dir: "output/edgar"
+
+# ─── Output ────────────────────────────────────────────────
+output:
+  base_dir: "output"
+  vector_store: "output/vector_store"
+
+# ─── NL2SQL Service ─────────────────────────────────────────
+nl2sql:
+  host: "0.0.0.0"
+  port: 8000
+  max_rows: 200
+  memory_search_limit: 4
+  memory_namespace: "nl2sql-memory"
+  llm_base_url: "https://api.groq.com/openai/v1"
+  llm_model: "llama-3.3-70b-versatile"
