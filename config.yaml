@@ -20,7 +20,7 @@ embedding:
 
 # ─── LLM (Language Model) ──────────────────────────────────
 llm:
-  provider: "groq"
+  provider: "openai"
 
   groq:
     model_name: "llama-3.3-70b-versatile"
@@ -100,5 +100,5 @@ nl2sql:
   max_rows: 200
   memory_search_limit: 4
   memory_namespace: "nl2sql-memory"
-  llm_base_url: "https://api.groq.com/openai/v1"
-  llm_model: "llama-3.3-70b-versatile"
+  llm_base_url: "https://api.openai.com/v1"
+  llm_model: "gpt-4o-mini"
