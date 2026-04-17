@@ -10,6 +10,9 @@ import asyncio
 import logging
 from typing import Any
 
+import nest_asyncio
+nest_asyncio.apply()
+
 logger = logging.getLogger(__name__)
 
 _pipeline = None
@@ -51,23 +54,12 @@ def query_xbrl(question: str) -> dict[str, Any]:
     """
     try:
         pipeline = _get_pipeline()
-        # Use nest_asyncio to allow running async code inside an existing event loop
-        import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            # We're inside an async context (FastAPI), use nest_asyncio
-            import nest_asyncio
-            nest_asyncio.apply()
-            result = loop.run_until_complete(pipeline.run(question))
-        except RuntimeError:
-            # No running loop, safe to use asyncio.run
-            result = asyncio.run(pipeline.run(question))
+        loop = asyncio.get_event_loop()
+        result = loop.run_until_complete(pipeline.run(question))
 
-        # Convert ChatResponse to the dict format the RAG pipeline expects
         rows = result.rows or []
         columns = result.columns or []
 
-        # Convert rows to list of dicts if they're lists
         result_dicts = []
         for row in rows:
             if isinstance(row, (list, tuple)):
