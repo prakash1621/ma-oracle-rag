@@ -20,7 +20,7 @@ embedding:
 
 # ─── LLM (Language Model) ──────────────────────────────────
 llm:
-  provider: "groq"
+  provider: "openai"
 
   groq:
     model_name: "llama-3.3-70b-versatile"
@@ -84,8 +84,8 @@ companies:
 
 # ─── EDGAR Settings ────────────────────────────────────────
 edgar:
-  filing_types: ["10-K"]
-  filings_per_type: 2
+  filing_types: ["10-K", "10-Q", "8-K"]
+  filings_per_type: 5
   output_dir: "output/edgar"
 
 # ─── Output ────────────────────────────────────────────────
@@ -100,5 +100,5 @@ nl2sql:
   max_rows: 200
   memory_search_limit: 4
   memory_namespace: "nl2sql-memory"
-  llm_base_url: "https://api.groq.com/openai/v1"
-  llm_model: "llama-3.3-70b-versatile"
+  llm_base_url: "https://api.openai.com/v1"
+  llm_model: "gpt-4o-mini"

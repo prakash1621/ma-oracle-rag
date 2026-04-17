@@ -42,7 +42,7 @@ def ingest_edgar(tickers, config):
     count = config.get("edgar", {}).get("filings_per_type", 2)
 
     for ticker in tickers:
-        result = pipeline.ingest_company(ticker=ticker, filing_types=["10-K"], count=count)
+        result = pipeline.ingest_company(ticker=ticker, filing_types=["10-K", "10-Q", "8-K"], count=count)
         print(f"  {ticker}: {result.chunks_created} chunks")
 
     docs = pipeline.get_documents()

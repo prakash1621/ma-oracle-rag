@@ -351,6 +351,12 @@ header {
 .message-card p {
     color: var(--success);
     font-weight: 500;
+    line-height: 1.8;
+}
+
+.message-card strong {
+    color: #fff;
+    font-weight: 600;
 }
 
 .table-wrapper {

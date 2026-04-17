@@ -33,6 +33,29 @@ VALID_ROUTES = [
 # Routes that use Pinecone retriever (same function, different category filter)
 PINECONE_ROUTES = {"sec_filing", "transcript", "proxy", "patent"}
 
+# Company name → ticker mapping for extracting tickers from questions
+_COMPANY_TICKERS = {
+    "apple": "AAPL", "microsoft": "MSFT", "nvidia": "NVDA",
+    "amazon": "AMZN", "meta": "META", "alphabet": "GOOGL",
+    "google": "GOOGL", "tesla": "TSLA", "salesforce": "CRM",
+    "snowflake": "SNOW", "crowdstrike": "CRWD",
+    "palo alto": "PANW", "fortinet": "FTNT",
+}
+
+
+def _extract_ticker(question: str, fallback: str | None = "AAPL") -> str | None:
+    """Extract a company ticker from the question text."""
+    q_lower = question.lower()
+    # Check for explicit tickers first
+    for ticker in ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "CRM", "SNOW", "CRWD", "PANW", "FTNT"]:
+        if ticker.lower() in q_lower:
+            return ticker
+    # Check for company names
+    for name, ticker in _COMPANY_TICKERS.items():
+        if name in q_lower:
+            return ticker
+    return fallback
+
 
 def _build_llm_client():
     """Build an OpenAI-compatible LLM client using config.yaml settings."""
@@ -55,7 +78,7 @@ def _classify_question(question: str, llm: Any, model: str) -> str:
         "eps", "earnings per share", "balance sheet", "expenses", "debt",
         "equity", "margin", "ebitda", "gross profit", "net income",
         "total assets", "operating income", "dividend", "fiscal year",
-        "how much", "show me the top", "compare", "quarterly",
+        "how much", "show me the top", "quarterly",
     ]
     transcript_keywords = [
         "earnings call", "ceo said", "cfo said", "management said",
@@ -70,6 +93,7 @@ def _classify_question(question: str, llm: Any, model: str) -> str:
     contradiction_keywords = [
         "contradict", "contradiction", "mismatch", "inconsisten",
         "claims vs", "compare what", "management vs filing",
+        "contradicted by", "forward guidance",
     ]
     sec_keywords = [
         "risk factor", "10-k", "10k", "filing", "sec filing",
@@ -173,31 +197,55 @@ class RAGPipeline:
         self.use_mocks = use_mocks
         self._llm = None  # lazy init
 
-        if use_mocks:
-            from src.mocks import (
-                mock_contradiction,
-                mock_kg,
-                mock_patents,
-                mock_retrieve,
-                mock_xbrl,
-            )
-            self._retrieve = mock_retrieve
-            self._query_xbrl = mock_xbrl
-            self._query_patents = mock_patents
-            self._query_kg = mock_kg
-            self._detect_contradictions = mock_contradiction
-        else:
-            # Real imports from Person 2/3/4 — uncomment on Day 4
+        # Start with mocks as defaults
+        from src.mocks import (
+            mock_contradiction,
+            mock_kg,
+            mock_patents,
+            mock_retrieve,
+            mock_xbrl,
+        )
+        self._retrieve = mock_retrieve
+        self._query_xbrl = mock_xbrl
+        self._query_patents = mock_patents
+        self._query_kg = mock_kg
+        self._detect_contradictions = mock_contradiction
+
+        # Override with real modules when available
+        try:
             from src.retrieval.pinecone_retriever import retrieve_from_pinecone
-            from src.retrieval.xbrl_query import query_xbrl
-            from src.retrieval.patent_query import query_patents
-            from src.knowledge_graph.query import query_knowledge_graph
-            from src.contradiction.detector import detect_contradictions
             self._retrieve = retrieve_from_pinecone
+            logger.info("Using real pinecone_retriever")
+        except ImportError:
+            logger.info("Using mock pinecone_retriever")
+
+        try:
+            from src.retrieval.xbrl_query import query_xbrl
             self._query_xbrl = query_xbrl
+            logger.info("Using real xbrl_query")
+        except ImportError:
+            logger.info("Using mock xbrl_query")
+
+        try:
+            from src.retrieval.patent_query import query_patents
             self._query_patents = query_patents
+            logger.info("Using real patent_query")
+        except ImportError:
+            logger.info("Using mock patent_query")
+
+        try:
+            from src.knowledge_graph.query import query_knowledge_graph
             self._query_kg = query_knowledge_graph
+            logger.info("Using real knowledge_graph")
+        except ImportError:
+            logger.info("Using mock knowledge_graph")
+
+        try:
+            from src.contradiction.detector import detect_contradictions
             self._detect_contradictions = detect_contradictions
+            logger.info("Using real contradiction detector")
+        except ImportError:
+            logger.info("Using mock contradiction detector")
 
     @property
     def llm(self):
@@ -269,7 +317,8 @@ class RAGPipeline:
                 ], extras
 
             if route in PINECONE_ROUTES:
-                return self._retrieve(question, category=route, top_k=5, ticker=ticker), extras
+                detected_ticker = ticker or _extract_ticker(question, fallback=None)
+                return self._retrieve(question, category=route, top_k=5, ticker=detected_ticker), extras
 
             if route == "knowledge_graph":
                 result = self._query_kg(question, tickers=[ticker] if ticker else None)
@@ -282,17 +331,31 @@ class RAGPipeline:
                 ], extras
 
             if route == "contradiction":
-                result = self._detect_contradictions(ticker or "AAPL")
-                return [
-                    {
+                detected_ticker = ticker or _extract_ticker(question)
+                result = self._detect_contradictions(detected_ticker)
+                chunks = []
+                for c in result.get("contradictions", []):
+                    chunks.append({
                         "text": c.get("explanation", ""),
                         "metadata": {"filing_type": "contradiction", "company": ticker or ""},
                         "claim": c.get("claim", ""),
                         "fact": c.get("fact", ""),
                         "score": 1.0,
-                    }
-                    for c in result.get("contradictions", [])
-                ], extras
+                    })
+                for ns in result.get("not_supported", []):
+                    chunks.append({
+                        "text": ns.get("explanation", "Claim not supported by filings"),
+                        "metadata": {"filing_type": "not_supported", "company": ticker or ""},
+                        "claim": ns.get("claim", ""),
+                        "score": 0.7,
+                    })
+                if not chunks and result.get("summary"):
+                    chunks.append({
+                        "text": result["summary"],
+                        "metadata": {"filing_type": "contradiction", "company": ticker or ""},
+                        "score": 1.0,
+                    })
+                return chunks, extras
 
             # Fallback
             return self._retrieve(question, category="sec_filing", top_k=5, ticker=ticker), extras

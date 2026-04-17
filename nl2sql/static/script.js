@@ -144,6 +144,16 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsSection.classList.remove('hidden');
     }
 
+    // Simple markdown to HTML
+    function renderMarkdown(text) {
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/^\d+\.\s+/gm, match => `<br>${match}`)
+            .replace(/^- /gm, '<br>• ')
+            .replace(/\n/g, '<br>')
+            .replace(/^<br>/, '');
+    }
+
     // RAG mode — hits POST /query
     async function executeRagQuery(query) {
         const res = await fetch('/query', {
@@ -156,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         ragRouteBadge.textContent = data.route || 'unknown';
         ragConfidence.textContent = `Confidence: ${Math.round((data.confidence || 0) * 100)}%`;
-        ragAnswer.textContent = data.answer || 'No answer generated.';
+        ragAnswer.innerHTML = renderMarkdown(data.answer || 'No answer generated.');
 
         if (data.citations && data.citations.length > 0) {
             ragCitationsList.innerHTML = data.citations.map(c =>
