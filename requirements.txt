@@ -31,3 +31,6 @@ langchain-core>=0.1.10
 fastapi>=0.100.0
 uvicorn>=0.23.0
 vanna[openai]>=0.7.0
+
+# OPENAI langchain
+#pip install langchain-openai
