@@ -17,6 +17,8 @@ langchain-text-splitters>=0.0.1
 # Vector store
 pinecone-client>=3.0.0
 langchain-pinecone>=0.1.0
+neo4j>=5.22.0
+
 
 # Default embedding provider: AWS Bedrock
 boto3>=1.34.0

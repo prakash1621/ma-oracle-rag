@@ -30,8 +30,9 @@ SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "")
 
 
 def load_config():
-    with open(os.path.join(os.path.dirname(__file__), "config.yaml")) as f:
-        return yaml.safe_load(f)
+ config_path = "config.yaml"  # Adjust the path if necessary
+ with open(config_path, "r", encoding="utf-8") as f:  # Specify UTF-8 encoding
+    return yaml.safe_load(f)
 
 
 def ingest_edgar(tickers, config):

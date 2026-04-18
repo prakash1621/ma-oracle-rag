@@ -88,7 +88,9 @@ def _classify_question(question: str, llm: Any, model: str) -> str:
     proxy_keywords = ["proxy", "compensation", "governance", "executive pay"]
     kg_keywords = [
         "board member", "board of director", "who serves", "relationship",
-        "connected to", "subsidiary", "who are",
+        "connected to", "subsidiary", "who are", "knowledge graph",
+        "entity graph", "entity relationship", "competitor", "litigation",
+        "graph chain", "cypher", "->",
     ]
     contradiction_keywords = [
         "contradict", "contradiction", "mismatch", "inconsisten",
@@ -104,12 +106,13 @@ def _classify_question(question: str, llm: Any, model: str) -> str:
         return "xbrl_financial"
     if any(kw in q_lower for kw in transcript_keywords):
         return "transcript"
+    # Prioritize KG for graph-style multi-entity questions even if they mention patents.
+    if any(kw in q_lower for kw in kg_keywords):
+        return "knowledge_graph"
     if any(kw in q_lower for kw in patent_keywords):
         return "patent"
     if any(kw in q_lower for kw in proxy_keywords):
         return "proxy"
-    if any(kw in q_lower for kw in kg_keywords):
-        return "knowledge_graph"
     if any(kw in q_lower for kw in contradiction_keywords):
         return "contradiction"
     if any(kw in q_lower for kw in sec_keywords):
@@ -270,8 +273,8 @@ class RAGPipeline:
         # Step 1: Route
         route = _classify_question(question, self.llm, self.llm_model)
         t1 = time.time()
-        logger.info("[TIMING] Route: %.2fs → %s for '%s'", t1 - t0, route, question[:50])
-        print(f"[TIMING] Route: {t1 - t0:.2f}s → {route} for '{question[:50]}'")
+        logger.info("[TIMING] Route: %.2fs -> %s for '%s'", t1 - t0, route, question[:50])
+        print(f"[TIMING] Route: {t1 - t0:.2f}s -> {route} for '{question[:50]}'")
 
         # Step 2: Retrieve based on route
         chunks, extras = self._fetch(route, question, ticker)
@@ -322,6 +325,13 @@ class RAGPipeline:
 
             if route == "knowledge_graph":
                 result = self._query_kg(question, tickers=[ticker] if ticker else None)
+                extras = {
+                    "cypher_query": result.get("cypher", ""),
+                    "kg_results": result.get("results", []),
+                    "graph_data": result.get("graph_data", {"nodes": [], "edges": []}),
+                }
+                if result.get("error"):
+                    extras["kg_error"] = result.get("error")
                 return [
                     {
                         "text": f"Cypher: {result['cypher']}\nResults: {result['results']}",
