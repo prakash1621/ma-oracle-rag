@@ -66,7 +66,7 @@ class PineconeAgentMemory(AgentMemory):
         """Upsert a question-SQL record into Pinecone with retry on rate-limit."""
         record: Dict[str, Any] = {
             "_id": _deterministic_id(question),
-            "chunk_text": question,
+            "text": question,  # Ensure 'text' field is included
             "tool_name": tool_name,
             "sql": args.get("sql", ""),
             "success": success,
