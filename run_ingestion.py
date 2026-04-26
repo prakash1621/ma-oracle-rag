@@ -38,11 +38,20 @@ def ingest_edgar(tickers, config):
     """Source 1+2: SEC EDGAR 10-K filings."""
     from ingestion.edgar import EdgarIngestionPipeline
     output_dir = config.get("edgar", {}).get("output_dir", "output/edgar")
-    pipeline = EdgarIngestionPipeline(user_agent=SEC_USER_AGENT, output_dir=output_dir)
+    chunking = config.get("chunking", {}).get("parent_child", {})
+    pipeline = EdgarIngestionPipeline(
+        user_agent=SEC_USER_AGENT,
+        output_dir=output_dir,
+        parent_chunk_size=chunking.get("parent_size", 4000),
+        parent_chunk_overlap=chunking.get("parent_overlap", 600),
+        child_chunk_size=chunking.get("child_size", 1500),
+        child_chunk_overlap=chunking.get("child_overlap", 200),
+    )
     count = config.get("edgar", {}).get("filings_per_type", 2)
+    filing_types = config.get("edgar", {}).get("filing_types", ["10-K", "10-Q", "8-K"])
 
     for ticker in tickers:
-        result = pipeline.ingest_company(ticker=ticker, filing_types=["10-K", "10-Q", "8-K"], count=count)
+        result = pipeline.ingest_company(ticker=ticker, filing_types=filing_types, count=count)
         print(f"  {ticker}: {result.chunks_created} chunks")
 
     docs = pipeline.get_documents()

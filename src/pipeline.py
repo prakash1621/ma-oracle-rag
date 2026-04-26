@@ -69,7 +69,7 @@ def _build_llm_client():
 
 
 def _classify_question(question: str, llm: Any, model: str) -> str:
-    """Classify a question into a route. Uses keyword matching first (instant), LLM as fallback."""
+    """Classify a question into a single route. Uses keyword matching first (instant), LLM as fallback."""
     q_lower = question.lower()
 
     # Keyword-based routing — instant, no LLM call
@@ -146,6 +146,65 @@ def _classify_question(question: str, llm: Any, model: str) -> str:
     return route if route in VALID_ROUTES else "sec_filing"
 
 
+# ─── Multi-route detection ───────────────────────────────────
+
+_ROUTE_KEYWORDS = {
+    "xbrl_financial": [
+        "revenue", "income", "profit", "assets", "liabilities", "cash flow",
+        "eps", "earnings per share", "balance sheet", "expenses", "debt",
+        "equity", "margin", "ebitda", "gross profit", "net income",
+        "total assets", "operating income", "dividend", "fiscal year",
+    ],
+    "sec_filing": [
+        "risk factor", "10-k", "10k", "filing", "sec filing",
+        "business description", "item 1a", "annual report",
+    ],
+    "transcript": [
+        "earnings call", "ceo said", "cfo said", "management said",
+        "earnings transcript", "call transcript", "what did",
+    ],
+    "patent": ["patent", "invention", "intellectual property"],
+    "proxy": ["proxy", "compensation", "governance", "executive pay"],
+    "knowledge_graph": [
+        "board member", "board of director", "who serves", "subsidiary",
+        "competitor", "litigation", "entity relationship",
+    ],
+    "contradiction": [
+        "contradict", "contradiction", "mismatch", "inconsisten",
+        "claims vs", "management vs filing",
+    ],
+}
+
+# Multi-route trigger words — questions that compare or cross-reference data sources
+_MULTI_ROUTE_SIGNALS = [
+    "cross-reference", "cross reference", "correlate", "compare",
+    "vs.", "vs ", "versus", "alongside", "combined with",
+    "together with", "in conjunction", "diverge",
+]
+
+
+def _classify_multi(question: str, llm: Any, model: str) -> list[str]:
+    """Detect if a question needs multiple routes. Returns list of 1+ routes."""
+    q_lower = question.lower()
+
+    # Check if question has multi-route signals
+    has_multi_signal = any(sig in q_lower for sig in _MULTI_ROUTE_SIGNALS)
+
+    # Find all matching routes
+    matched_routes = []
+    for route, keywords in _ROUTE_KEYWORDS.items():
+        if any(kw in q_lower for kw in keywords):
+            matched_routes.append(route)
+
+    # If multiple routes matched AND there's a comparison signal, return all
+    if has_multi_signal and len(matched_routes) >= 2:
+        return matched_routes
+
+    # Otherwise fall back to single-route classification
+    single = _classify_question(question, llm, model)
+    return [single]
+
+
 def _generate_answer(question: str, chunks: list[dict], llm: Any, model: str) -> str:
     """Use LLM to generate an answer from retrieved chunks."""
     if not chunks:
@@ -153,7 +212,7 @@ def _generate_answer(question: str, chunks: list[dict], llm: Any, model: str) ->
 
     context = "\n\n".join(
         f"Source {i+1}: {c.get('text', c.get('claim', str(c)))}"
-        for i, c in enumerate(chunks[:5])
+        for i, c in enumerate(chunks[:8])
     )
     response = llm.chat.completions.create(
         model=model,
@@ -161,8 +220,14 @@ def _generate_answer(question: str, chunks: list[dict], llm: Any, model: str) ->
             {
                 "role": "system",
                 "content": (
-                    "You are a financial analyst assistant. Answer the question based on "
-                    "the provided sources. Cite which source number you used. Be concise and factual."
+                    "You are a financial analyst assistant for M&A due diligence. "
+                    "Answer the question using the provided sources. "
+                    "Always synthesize and analyze what IS available — summarize the data, "
+                    "identify patterns, and draw insights from the sources. "
+                    "If some specific data points are missing, state what you found and "
+                    "note what additional data would be needed. "
+                    "Never say you 'cannot provide' an answer when sources contain relevant information. "
+                    "Cite source numbers. Be concise and factual."
                 ),
             },
             {"role": "user", "content": f"Question: {question}\n\nSources:\n{context}"},
@@ -270,20 +335,31 @@ class RAGPipeline:
 
         t0 = time.time()
 
-        # Step 1: Route
-        route = _classify_question(question, self.llm, self.llm_model)
+        # Step 1: Multi-route classification
+        routes = _classify_multi(question, self.llm, self.llm_model)
         t1 = time.time()
-        logger.info("[TIMING] Route: %.2fs → %s for '%s'", t1 - t0, route, question[:50])
-        print(f"[TIMING] Route: {t1 - t0:.2f}s → {route} for '{question[:50]}'")
+        route_label = "+".join(routes)
+        logger.info("[TIMING] Route: %.2fs → %s for '%s'", t1 - t0, route_label, question[:50])
+        print(f"[TIMING] Route: {t1 - t0:.2f}s → {route_label} for '{question[:50]}'")
 
-        # Step 2: Retrieve based on route
-        chunks, extras = self._fetch(route, question, ticker)
+        # Step 2: Retrieve from all routes and merge
+        all_chunks = []
+        merged_extras = {}
+        for route in routes:
+            chunks, extras = self._fetch(route, question, ticker)
+            all_chunks.extend(chunks)
+            if extras:
+                merged_extras[route] = extras
+                # Promote xbrl extras to top level for the /ask endpoint
+                if route == "xbrl_financial":
+                    merged_extras.update(extras)
+
         t2 = time.time()
-        logger.info("[TIMING] Fetch: %.2fs (%d chunks)", t2 - t1, len(chunks))
-        print(f"[TIMING] Fetch: {t2 - t1:.2f}s ({len(chunks)} chunks)")
+        logger.info("[TIMING] Fetch: %.2fs (%d chunks from %d routes)", t2 - t1, len(all_chunks), len(routes))
+        print(f"[TIMING] Fetch: {t2 - t1:.2f}s ({len(all_chunks)} chunks from {len(routes)} routes)")
 
-        # Step 3: Generate answer
-        answer = _generate_answer(question, chunks, self.llm, self.llm_model)
+        # Step 3: Generate answer from combined chunks
+        answer = _generate_answer(question, all_chunks, self.llm, self.llm_model)
         t3 = time.time()
         logger.info("[TIMING] Generate: %.2fs", t3 - t2)
         print(f"[TIMING] Generate: {t3 - t2:.2f}s")
@@ -292,11 +368,11 @@ class RAGPipeline:
         # Step 4: Build response
         return QueryResponse(
             answer=answer,
-            citations=_chunks_to_citations(chunks, route),
-            route=route,
-            confidence=0.9 if chunks else 0.3,
-            sources=chunks,
-            extras=extras,
+            citations=_chunks_to_citations(all_chunks, route_label),
+            route=route_label,
+            confidence=0.9 if all_chunks else 0.3,
+            sources=all_chunks,
+            extras=merged_extras,
         )
 
     def _fetch(self, route: str, question: str, ticker: str | None = None) -> tuple[list[dict], dict]:

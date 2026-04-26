@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -8,7 +9,7 @@ from nl2sql.app.config import get_settings
 from nl2sql.app.database import DatabaseClient
 from nl2sql.app.llm import SQLGenerator
 from nl2sql.app.memory import count_memories, create_agent_memory
-from nl2sql.app.models import ChatRequest, ChatResponse, HealthResponse
+from nl2sql.app.models import ChatRequest, ChatResponse, HealthResponse, UnifiedRequest, UnifiedResponse
 from nl2sql.app.pipeline import NL2SQLPipeline
 from nl2sql.app.schema import load_database_schema
 from nl2sql.app.security import SQLValidator
@@ -52,6 +53,15 @@ def _should_use_mocks() -> bool:
 
 
 app = FastAPI(title="NL2SQL API", lifespan=lifespan)
+
+# CORS — allow frontend on Vercel to call Railway backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Mount static asset directory for CSS and JS
 app.mount("/static", StaticFiles(directory="nl2sql/static"), name="static")
@@ -101,4 +111,44 @@ async def rag_query(payload: QueryRequest, request: Request):
     }
     if result.extras:
         response["extras"] = result.extras
+    return response
+
+
+@app.post("/ask", response_model=UnifiedResponse)
+async def unified_ask(payload: UnifiedRequest, request: Request):
+    """Smart unified endpoint — auto-detects whether to use SQL or RAG."""
+    rag_result = request.app.state.rag_pipeline.query(
+        payload.question, payload.filters
+    )
+
+    response = UnifiedResponse(
+        answer=rag_result.answer,
+        route=rag_result.route,
+        confidence=rag_result.confidence,
+        citations=[
+            {
+                "company_name": c.company_name,
+                "filing_type": c.filing_type,
+                "filing_date": c.filing_date,
+                "source_text": c.source_text,
+                "relevance_score": c.relevance_score,
+            }
+            for c in rag_result.citations
+        ],
+        extras=rag_result.extras or {},
+    )
+
+    # If routed to xbrl_financial, also include raw SQL table data
+    if rag_result.route == "xbrl_financial" and rag_result.extras:
+        response.sql_query = rag_result.extras.get("sql_query", "")
+        response.columns = rag_result.extras.get("columns", [])
+        rows = rag_result.extras.get("rows", [])
+        # Convert dicts to lists for table rendering
+        if rows and isinstance(rows[0], dict):
+            cols = response.columns or list(rows[0].keys())
+            response.columns = cols
+            response.rows = [[r.get(c) for c in cols] for r in rows]
+        else:
+            response.rows = rows
+
     return response

@@ -30,15 +30,11 @@
         </section>
 
         <section class="search-section">
-            <div class="mode-toggle">
-                <button id="mode-sql" class="mode-btn active" title="Direct SQL queries against financial database">SQL Mode</button>
-                <button id="mode-rag" class="mode-btn" title="RAG pipeline — routes to the best data source">RAG Mode</button>
-            </div>
             <div class="search-box">
                 <button id="try-btn" class="secondary-btn" title="Load an example question">✨ Example</button>
-                <input type="text" id="query-input" placeholder="e.g., Show me the top 5 companies by total assets in 2024..." autocomplete="off">
+                <input type="text" id="query-input" placeholder="e.g., What was Apple's revenue in 2024? or Show me top 5 companies by assets..." autocomplete="off">
                 <button id="search-btn" class="primary-btn">
-                    <span id="btn-text">Generate SQL</span>
+                    <span id="btn-text">Ask</span>
                     <div id="btn-loader" class="loader hidden"></div>
                 </button>
             </div>
@@ -47,18 +43,26 @@
         </section>
 
         <section class="results-section hidden" id="results-section">
-            <div class="sql-card glass-panel">
+            <div class="glass-panel">
+                <div class="card-header">
+                    <h3>Route</h3>
+                    <span class="badge" id="route-badge">—</span>
+                </div>
+                <p id="confidence-text" style="color: var(--text-secondary); font-size: 0.875rem;"></p>
+            </div>
+
+            <div class="message-card glass-panel">
+                <p id="answer-text"></p>
+            </div>
+
+            <div class="sql-card glass-panel hidden" id="sql-card">
                 <div class="card-header">
                     <h3>Generated Query</h3>
                     <span class="badge">SQLite</span>
                 </div>
                 <div class="code-block-wrapper">
-                    <code id="sql-output" class="sql-code">SELECT * FROM data;</code>
+                    <code id="sql-output" class="sql-code"></code>
                 </div>
-            </div>
-
-            <div class="message-card glass-panel">
-                <p id="assistant-message"></p>
             </div>
 
             <div class="table-card glass-panel hidden" id="table-card">
@@ -69,30 +73,21 @@
                     </table>
                 </div>
             </div>
-        </section>
 
-        <section class="results-section hidden" id="rag-results-section">
-            <div class="glass-panel">
-                <div class="card-header">
-                    <h3>Route</h3>
-                    <span class="badge" id="rag-route-badge">—</span>
-                </div>
-                <p id="rag-confidence" style="color: var(--text-secondary); font-size: 0.875rem;"></p>
-            </div>
-
-            <div class="message-card glass-panel">
-                <p id="rag-answer"></p>
-            </div>
-
-            <div class="glass-panel hidden" id="rag-citations-card">
+            <div class="glass-panel hidden" id="citations-card">
                 <div class="card-header">
                     <h3>Citations</h3>
                 </div>
-                <div id="rag-citations-list"></div>
+                <div id="citations-list"></div>
             </div>
         </section>
     </main>
 
+    <script>
+        // Set this to your Railway backend URL when deploying to Vercel
+        // Leave empty for local development (same-origin)
+        window.__API_URL__ = '';
+    </script>
     <script src="/static/script.js"></script>
 </body>
 </html>
