@@ -2,6 +2,43 @@ document.addEventListener('DOMContentLoaded', () => {
     // API base URL — empty for same-origin (local dev), set for cross-origin (Vercel→Railway)
     const API_URL = window.__API_URL__ || '';
 
+    // Auth check — redirect to login if no token
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+        window.location.href = '/';
+        return;
+    }
+
+    // Auth headers for all API calls
+    const authHeaders = () => ({
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+    });
+
+    // Handle 401 — try refresh, else redirect to login
+    async function handleUnauthorized() {
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken) { logout(); return false; }
+        try {
+            const res = await fetch(`${API_URL}/api/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+            });
+            if (!res.ok) { logout(); return false; }
+            const data = await res.json();
+            localStorage.setItem('access_token', data.access_token);
+            return true;
+        } catch { logout(); return false; }
+    }
+
+    function logout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role');
+        window.location.href = '/';
+    }
+
     const input = document.getElementById('query-input');
     const searchBtn = document.getElementById('search-btn');
     const tryBtn = document.getElementById('try-btn');
@@ -36,7 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Health check
     const checkHealth = async () => {
         try {
-            const res = await fetch(`${API_URL}/health`);
+            const res = await fetch(`${API_URL}/health`, { headers: authHeaders() });
             const data = await res.json();
             const indicator = document.querySelector('.pulse');
             const statusText = document.getElementById('health-text');
@@ -83,11 +120,24 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(`${API_URL}/ask`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ question: query, filters: {} })
             });
-            if (!res.ok) throw new Error('API Error - Failed to process query.');
-            const data = await res.json();
+            if (res.status === 401) {
+                const refreshed = await handleUnauthorized();
+                if (!refreshed) return;
+                // Retry with new token
+                const retry = await fetch(`${API_URL}/ask`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ question: query, filters: {} })
+                });
+                if (!retry.ok) throw new Error('API Error');
+                var data = await retry.json();
+            } else {
+                if (!res.ok) throw new Error('API Error - Failed to process query.');
+                var data = await res.json();
+            }
 
             // Route and confidence
             routeBadge.textContent = data.route || 'unknown';

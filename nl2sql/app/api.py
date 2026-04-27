@@ -1,12 +1,21 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
+from nl2sql.app.auth import (
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    ensure_default_admin,
+)
 from nl2sql.app.config import get_settings
 from nl2sql.app.database import DatabaseClient
+from nl2sql.app.dependencies import get_current_user
 from nl2sql.app.llm import SQLGenerator
 from nl2sql.app.memory import count_memories, create_agent_memory
 from nl2sql.app.models import ChatRequest, ChatResponse, HealthResponse, UnifiedRequest, UnifiedResponse
@@ -50,6 +59,7 @@ async def lifespan(app: FastAPI):
         app.state.pipeline = None
 
     app.state.rag_pipeline = RAGPipeline(use_mocks=_should_use_mocks())
+    ensure_default_admin()
     yield
 
 
@@ -81,8 +91,46 @@ app.mount("/static", StaticFiles(directory="nl2sql/static"), name="static")
 
 @app.get("/")
 async def serve_ui():
-    """Serve the Glassmorphism Front End"""
+    """Redirect to login if not authenticated, otherwise serve main UI."""
+    return FileResponse("nl2sql/static/login.html")
+
+
+@app.get("/app")
+async def serve_app():
+    """Serve the main application UI (after login)."""
     return FileResponse("nl2sql/static/index.html")
+
+
+# ─── Auth endpoints ──────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@app.post("/api/auth/login")
+async def login(payload: LoginRequest):
+    user = authenticate_user(payload.username, payload.password)
+    if not user:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    access = create_access_token({"sub": user["username"], "role": user["role"]})
+    refresh = create_refresh_token({"sub": user["username"], "role": user["role"]})
+    return {"access_token": access, "refresh_token": refresh, "role": user["role"]}
+
+
+@app.post("/api/auth/refresh")
+async def refresh(payload: RefreshRequest):
+    data = decode_token(payload.refresh_token, expected_type="refresh")
+    if not data:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    access = create_access_token({"sub": data["sub"], "role": data["role"]})
+    return {"access_token": access}
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -101,7 +149,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
 
 
 @app.post("/query")
-async def rag_query(payload: QueryRequest, request: Request):
+async def rag_query(payload: QueryRequest, request: Request, user: dict = Depends(get_current_user)):
     """Unified endpoint — routes question to the best data source automatically."""
     result = request.app.state.rag_pipeline.query(
         payload.question, payload.filters
@@ -127,7 +175,7 @@ async def rag_query(payload: QueryRequest, request: Request):
 
 
 @app.post("/ask", response_model=UnifiedResponse)
-async def unified_ask(payload: UnifiedRequest, request: Request):
+async def unified_ask(payload: UnifiedRequest, request: Request, user: dict = Depends(get_current_user)):
     """Smart unified endpoint — auto-detects whether to use SQL or RAG."""
     rag_result = request.app.state.rag_pipeline.query(
         payload.question, payload.filters
