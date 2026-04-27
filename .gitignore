@@ -17,6 +17,7 @@ build/
 
 # Output data
 output/
+!output/xbrl/financials.db
 
 # Logs
 *.log
