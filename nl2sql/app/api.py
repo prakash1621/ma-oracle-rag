@@ -21,22 +21,34 @@ from src.pipeline import RAGPipeline
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import logging
+    logger = logging.getLogger(__name__)
     settings = get_settings()
-    database = DatabaseClient(settings.db_path)
-    schema = load_database_schema(settings.db_path)
-    agent_memory = create_agent_memory(settings)
-    await seed_agent_memory(agent_memory)
 
-    app.state.settings = settings
-    app.state.database = database
-    app.state.agent_memory = agent_memory
-    app.state.pipeline = NL2SQLPipeline(
-        settings=settings,
-        database=database,
-        sql_generator=SQLGenerator(settings=settings, schema=schema),
-        sql_validator=SQLValidator(schema=schema, database=database),
-        agent_memory=agent_memory,
-    )
+    # NL2SQL pipeline — requires local SQLite DB (may not exist in cloud deployment)
+    try:
+        database = DatabaseClient(settings.db_path)
+        schema = load_database_schema(settings.db_path)
+        agent_memory = create_agent_memory(settings)
+        await seed_agent_memory(agent_memory)
+
+        app.state.settings = settings
+        app.state.database = database
+        app.state.agent_memory = agent_memory
+        app.state.pipeline = NL2SQLPipeline(
+            settings=settings,
+            database=database,
+            sql_generator=SQLGenerator(settings=settings, schema=schema),
+            sql_validator=SQLValidator(schema=schema, database=database),
+            agent_memory=agent_memory,
+        )
+    except Exception as exc:
+        logger.warning("NL2SQL pipeline init skipped (no local DB): %s", exc)
+        app.state.settings = settings
+        app.state.database = None
+        app.state.agent_memory = None
+        app.state.pipeline = None
+
     app.state.rag_pipeline = RAGPipeline(use_mocks=_should_use_mocks())
     yield
 
