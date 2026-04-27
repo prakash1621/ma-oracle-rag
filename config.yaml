@@ -57,10 +57,10 @@ vector_store:
 # ─── Chunking Strategies ───────────────────────────────────
 chunking:
   parent_child:
-    parent_size: 3000
-    parent_overlap: 500
-    child_size: 500
-    child_overlap: 100
+    parent_size: 4000
+    parent_overlap: 600
+    child_size: 1500
+    child_overlap: 200
 
   semantic:
     buffer_size: 1
@@ -84,8 +84,8 @@ companies:
 
 # ─── EDGAR Settings ────────────────────────────────────────
 edgar:
-  filing_types: ["10-K", "10-Q", "8-K"]
-  filings_per_type: 5
+  filing_types: ["10-K", "10-Q", "8-K", "DEF 14A"]
+  filings_per_type: 8
   output_dir: "output/edgar"
 
 # ─── Output ────────────────────────────────────────────────

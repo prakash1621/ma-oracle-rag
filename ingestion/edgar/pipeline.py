@@ -67,10 +67,10 @@ class EdgarIngestionPipeline:
         self,
         user_agent: str,
         output_dir: str = "data/edgar",
-        parent_chunk_size: int = 3000,
-        parent_chunk_overlap: int = 500,
-        child_chunk_size: int = 500,
-        child_chunk_overlap: int = 100,
+        parent_chunk_size: int = 4000,
+        parent_chunk_overlap: int = 600,
+        child_chunk_size: int = 1500,
+        child_chunk_overlap: int = 200,
     ):
         self.client = EdgarClient(user_agent=user_agent)
         self.parser = FilingParser()

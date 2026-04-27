@@ -166,37 +166,6 @@ header {
     animation: fade-in-up 1s ease;
 }
 
-.mode-toggle {
-    display: flex;
-    justify-content: center;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.mode-btn {
-    font-family: var(--font-main);
-    font-weight: 600;
-    font-size: 0.875rem;
-    padding: 0.5rem 1.25rem;
-    border-radius: 99px;
-    border: 1px solid var(--border-color);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.mode-btn:hover {
-    color: var(--text-primary);
-    border-color: rgba(255,255,255,0.2);
-}
-
-.mode-btn.active {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-}
-
 .citation-item {
     padding: 0.75rem;
     border-bottom: 1px solid rgba(255,255,255,0.05);
