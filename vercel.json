@@ -1,6 +1,8 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/static/(.*)", "destination": "/$1" },
+    { "source": "/app", "destination": "/index.html" },
+    { "source": "/", "destination": "/login.html" }
   ],
   "outputDirectory": "nl2sql/static"
 }

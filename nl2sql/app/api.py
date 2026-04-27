@@ -133,6 +133,56 @@ async def refresh(payload: RefreshRequest):
     return {"access_token": access}
 
 
+# ─── User management (admin only) ────────────────────────────
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "viewer"
+
+
+@app.get("/api/users")
+async def list_users(user: dict = Depends(get_current_user)):
+    from nl2sql.app.auth import _load_users
+    users = _load_users()
+    return [{"username": k, "role": v.get("role", "viewer")} for k, v in users.items()]
+
+
+@app.post("/api/users")
+async def create_user(payload: CreateUserRequest, user: dict = Depends(get_current_user)):
+    from fastapi import HTTPException
+    from nl2sql.app.auth import _load_users, _save_users, hash_password
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if payload.role not in ("admin", "viewer"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin' or 'viewer'")
+    users = _load_users()
+    if payload.username in users:
+        raise HTTPException(status_code=409, detail="User already exists")
+    users[payload.username] = {
+        "password_hash": hash_password(payload.password),
+        "role": payload.role,
+    }
+    _save_users(users)
+    return {"username": payload.username, "role": payload.role}
+
+
+@app.delete("/api/users/{username}")
+async def delete_user(username: str, user: dict = Depends(get_current_user)):
+    from fastapi import HTTPException
+    from nl2sql.app.auth import _load_users, _save_users
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if username == user.get("username"):
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    users = _load_users()
+    if username not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    del users[username]
+    _save_users(users)
+    return {"deleted": username}
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health(request: Request) -> HealthResponse:
     database_status = "connected" if request.app.state.database.check_connection() else "disconnected"
